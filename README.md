@@ -1,407 +1,165 @@
-###### Copyright © 2025 Code Jackal | Original Course Material by Chris Blakely
+# PulseHealth Platform
 
----
-# Join the Discord Community
+[![Java](https://img.shields.io/badge/Java-17%2B-ED8B00?style=for-the-badge&logo=openjdk&logoColor=white)](https://www.oracle.com/java/)
+[![Spring Boot](https://img.shields.io/badge/Spring_Boot-3.x-6DB33F?style=for-the-badge&logo=spring-boot&logoColor=white)](https://spring.io/projects/spring-boot)
+[![Spring Cloud](https://img.shields.io/badge/Spring_Cloud-Gateway-6DB33F?style=for-the-badge&logo=spring&logoColor=white)](https://spring.io/projects/spring-cloud)
+[![gRPC](https://img.shields.io/badge/gRPC-Protobuf-244c5a?style=for-the-badge&logo=grpc&logoColor=white)](https://grpc.io/)
+[![Apache Kafka](https://img.shields.io/badge/Apache_Kafka-Event--Driven-231F20?style=for-the-badge&logo=apache-kafka&logoColor=white)](https://kafka.apache.org/)
+[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-Database_Per_Service-4169E1?style=for-the-badge&logo=postgresql&logoColor=white)](https://www.postgresql.org/)
+[![Docker](https://img.shields.io/badge/Docker-Containerized-2496ED?style=for-the-badge&logo=docker&logoColor=white)](https://www.docker.com/)
+[![AWS CDK](https://img.shields.io/badge/AWS_CDK-LocalStack-FF9900?style=for-the-badge&logo=amazon-aws&logoColor=white)](https://aws.amazon.com/cdk/)
 
-This source code is for the Java/Spring microservices course available on my 
-YouTube channel. You can join the discord for help and discussion here:
-
-https://discord.gg/nCrDnfCE
-
-
-# Patient Service
-
----
-
-## Environment Variables
-
-```
-JAVA_TOOL_OPTIONS=-agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=*:5005;
-SPRING_DATASOURCE_PASSWORD=password;
-SPRING_DATASOURCE_URL=jdbc:postgresql://patient-service-db:5432/db;
-SPRING_DATASOURCE_USERNAME=admin_user;
-SPRING_JPA_HIBERNATE_DDL_AUTO=update;
-SPRING_KAFKA_BOOTSTRAP_SERVERS=kafka:9092;
-SPRING_SQL_INIT_MODE=always
-```
-
-# Billing Service
+An enterprise-grade, event-driven distributed healthcare platform designed for high availability, fault isolation, and low-latency inter-service communication. PulseHealth manages the complete patient clinical lifecycle—from authentication and Electronic Health Records (EHR) to high-speed billing processing and real-time streaming analytics.
 
 ---
 
-## gRPC Setup
+## Architecture Overview
 
-Add the following to the `<dependencies>` section
+```mermaid
+flowchart TD
+    Client(["HTTP Client / Frontend"]) -->|REST / HTTPS| Gateway["API Gateway (Port 8080)<br/>Spring Cloud Gateway + JWT Filter"]
+
+    subgraph Edge & Security
+        Gateway -->|Route /auth| AuthSvc["Auth Service (Port 8081)<br/>Spring Security + JWT"]
+        AuthSvc --- AuthDB[("PostgreSQL<br/>Auth DB")]
+    end
+
+    subgraph Core Clinical Domain
+        Gateway -->|Route /patients| PatientSvc["Patient Service (Port 8082)<br/>EHR & Profile Management"]
+        PatientSvc --- PatientDB[("PostgreSQL<br/>Patient DB")]
+    end
+
+    subgraph High-Performance Billing
+        PatientSvc -->|gRPC / Protobuf<br/>Port 9005| BillingSvc["Billing Service<br/>gRPC Server"]
+        BillingSvc --- BillingDB[("PostgreSQL<br/>Billing DB")]
+    end
+
+    subgraph Event-Driven Streaming
+        PatientSvc -->|Publish Events<br/>patient-events| Kafka["Apache Kafka Broker<br/>Port 9092"]
+        Kafka -->|Consume Events| AnalyticsSvc["Analytics Service<br/>Real-Time Aggregations"]
+    end
+
+    subgraph Cloud Infrastructure
+        LocalStack["AWS CDK / LocalStack<br/>ECS, VPC, Networking & SQS/SNS"]
+    end
 ```
-<!--GRPC -->
-<dependency>
-    <groupId>io.grpc</groupId>
-    <artifactId>grpc-netty-shaded</artifactId>
-    <version>1.69.0</version>
-</dependency>
-<dependency>
-    <groupId>io.grpc</groupId>
-    <artifactId>grpc-protobuf</artifactId>
-    <version>1.69.0</version>
-</dependency>
-<dependency>
-    <groupId>io.grpc</groupId>
-    <artifactId>grpc-stub</artifactId>
-    <version>1.69.0</version>
-</dependency>
-<dependency> <!-- necessary for Java 9+ -->
-    <groupId>org.apache.tomcat</groupId>
-    <artifactId>annotations-api</artifactId>
-    <version>6.0.53</version>
-    <scope>provided</scope>
-</dependency>
-<dependency>
-    <groupId>net.devh</groupId>
-    <artifactId>grpc-spring-boot-starter</artifactId>
-    <version>3.1.0.RELEASE</version>
-</dependency>
-<dependency>
-    <groupId>com.google.protobuf</groupId>
-    <artifactId>protobuf-java</artifactId>
-    <version>4.29.1</version>
-</dependency>
-
-```
-
-Replace the `<build>` section with the following
-
-```
-
-<build>
-    <extensions>
-        <!-- Ensure OS compatibility for protoc -->
-        <extension>
-            <groupId>kr.motd.maven</groupId>
-            <artifactId>os-maven-plugin</artifactId>
-            <version>1.7.0</version>
-        </extension>
-    </extensions>
-    <plugins>
-        <!-- Spring boot / maven  -->
-        <plugin>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-maven-plugin</artifactId>
-        </plugin>
-
-        <!-- PROTO -->
-        <plugin>
-            <groupId>org.xolstice.maven.plugins</groupId>
-            <artifactId>protobuf-maven-plugin</artifactId>
-            <version>0.6.1</version>
-            <configuration>
-                <protocArtifact>com.google.protobuf:protoc:3.25.5:exe:${os.detected.classifier}</protocArtifact>
-                <pluginId>grpc-java</pluginId>
-                <pluginArtifact>io.grpc:protoc-gen-grpc-java:1.68.1:exe:${os.detected.classifier}</pluginArtifact>
-            </configuration>
-            <executions>
-                <execution>
-                    <goals>
-                        <goal>compile</goal>
-                        <goal>compile-custom</goal>
-                    </goals>
-                </execution>
-            </executions>
-        </plugin>
-    </plugins>
-</build>
-
-```
-
-# Patient Service
 
 ---
 
-## Environment Variables (complete list)
+## Core Services & Responsibilities
+
+| Service | Protocol / Port | Technology | Purpose |
+| :--- | :--- | :--- | :--- |
+| **`api-gateway`** | HTTP / `8080` | Spring Cloud Gateway | Central entry point, request routing, header manipulation, and JWT token validation. |
+| **`auth-service`** | HTTP / `8081` | Spring Boot, Spring Security, JJWT | User registration, authentication, credential validation, and stateless JWT token issuance. |
+| **`patient-service`** | HTTP / `8082` | Spring Boot, Spring Data JPA, Kafka Producer | Manages patient medical profiles, diagnoses, and emits domain change events. |
+| **`billing-service`** | gRPC / `9005` | gRPC, Protobuf, Netty | High-performance binary RPC server handling patient billing accounts and transaction processing. |
+| **`analytics-service`**| Kafka Consumer | Spring Kafka, Protobuf Deserializer | Listens asynchronously to Kafka event streams for clinical data aggregation and metrics. |
+| **`infrastructure`** | IaC (AWS CDK) | AWS CDK Java, LocalStack | Cloud Infrastructure as Code defining container orchestration and cloud resource stacks. |
+| **`integration-tests`**| Test Suite | REST Assured, JUnit 5 | End-to-end integration and API contract verification suite across services. |
+
+---
+
+## Key Architectural & Technical Highlights
+
+1. **Dual-Protocol Communication**:
+   - **RESTful APIs** exposed at the edge through Spring Cloud Gateway for external clients.
+   - **gRPC + Protocol Buffers** internally between `patient-service` and `billing-service` for ultra-low latency, strongly typed contracts, and reduced binary serialization overhead.
+
+2. **Event-Driven Architecture**:
+   - Decoupled asynchronous processing powered by **Apache Kafka**.
+   - Patient admission, update, and discharge events are published to Kafka topics, consumed independently by the `analytics-service` without impacting core transactional flows.
+
+3. **Database-Per-Service Isolation**:
+   - Strict microservice boundaries with independent **PostgreSQL** database schemas for `auth`, `patient`, and `billing`, preventing domain coupling and shared locks.
+
+4. **Zero-Trust Token-Based Security**:
+   - Stateless **JWT (JSON Web Token)** authentication enforced at the API Gateway and Auth Service, featuring BCrypt password hashing and Role-Based Access Control (RBAC).
+
+5. **Cloud-Ready Infrastructure as Code (IaC)**:
+   - Fully automated AWS infrastructure provisioning defined using **AWS CDK in Java** and tested locally against **LocalStack**.
+
+---
+
+## Repository Structure
+
+```
+pulse-health-platform/
+├── api-gateway/           # Spring Cloud Gateway routing & edge security
+├── auth-service/          # Spring Security & JWT authentication service
+├── patient-service/       # Patient clinical management service (REST + Kafka + gRPC client)
+├── billing-service/       # Billing engine (gRPC server with Protobuf contracts)
+├── analytics-service/     # Real-time event consumer & streaming analytics
+├── api-requests/          # HTTP request collections for API testing
+├── grpc-requests/         # gRPC request schemas and test payloads
+├── infrastructure/        # AWS CDK Java definitions & LocalStack deployment scripts
+├── integration-tests/     # End-to-end REST Assured test suite
+└── pom.xml                # Multi-service parent POM configuration
+```
+
+---
+
+## Getting Started
+
+### Prerequisites
+* **Java**: JDK 17 or higher
+* **Maven**: 3.8+
+* **Docker & Docker Compose**: For containerized databases and Kafka broker
+
+### 1. Start Infrastructure Dependencies
+Start PostgreSQL instances, Apache Kafka, and LocalStack:
 ```bash
-BILLING_SERVICE_ADDRESS=billing-service;
-BILLING_SERVICE_GRPC_PORT=9005;
-JAVA_TOOL_OPTIONS=-agentlib:jdwp\=transport\=dt_socket,server\=y,suspend\=n,address\=*:5005;
-SPRING_DATASOURCE_PASSWORD=password;
-SPRING_DATASOURCE_URL=jdbc:postgresql://patient-service-db:5432/db;
-SPRING_DATASOURCE_USERNAME=admin_user;
-SPRING_JPA_HIBERNATE_DDL_AUTO=update;
-SPRING_KAFKA_BOOTSTRAP_SERVERS=kafka:9092;
-SPRING_SQL_INIT_MODE=always
+# Start Docker environment
+docker compose -f infrastructure/docker-compose.yml up -d
 ```
 
-
-## gRPC Setup
-
-Add the following to the `<dependencies>` section
-```
-<!--GRPC -->
-<dependency>
-    <groupId>io.grpc</groupId>
-    <artifactId>grpc-netty-shaded</artifactId>
-    <version>1.69.0</version>
-</dependency>
-<dependency>
-    <groupId>io.grpc</groupId>
-    <artifactId>grpc-protobuf</artifactId>
-    <version>1.69.0</version>
-</dependency>
-<dependency>
-    <groupId>io.grpc</groupId>
-    <artifactId>grpc-stub</artifactId>
-    <version>1.69.0</version>
-</dependency>
-<dependency> <!-- necessary for Java 9+ -->
-    <groupId>org.apache.tomcat</groupId>
-    <artifactId>annotations-api</artifactId>
-    <version>6.0.53</version>
-    <scope>provided</scope>
-</dependency>
-<dependency>
-    <groupId>net.devh</groupId>
-    <artifactId>grpc-spring-boot-starter</artifactId>
-    <version>3.1.0.RELEASE</version>
-</dependency>
-<dependency>
-    <groupId>com.google.protobuf</groupId>
-    <artifactId>protobuf-java</artifactId>
-    <version>4.29.1</version>
-</dependency>
-
+### 2. Build Services & Generate Protobuf Stubs
+Compile all services and generate gRPC stubs from proto definitions:
+```bash
+mvn clean install -DskipTests
 ```
 
-Replace the `<build>` section with the following
+### 3. Run the Services
+You can run each service independently using Maven:
+```bash
+# Terminal 1: Auth Service
+mvn -pl auth-service spring-boot:run
 
+# Terminal 2: Billing Service (gRPC)
+mvn -pl billing-service spring-boot:run
+
+# Terminal 3: Patient Service
+mvn -pl patient-service spring-boot:run
+
+# Terminal 4: Analytics Service
+mvn -pl analytics-service spring-boot:run
+
+# Terminal 5: API Gateway
+mvn -pl api-gateway spring-boot:run
 ```
-
-<build>
-    <extensions>
-        <!-- Ensure OS compatibility for protoc -->
-        <extension>
-            <groupId>kr.motd.maven</groupId>
-            <artifactId>os-maven-plugin</artifactId>
-            <version>1.7.0</version>
-        </extension>
-    </extensions>
-    <plugins>
-        <!-- Spring boot / maven  -->
-        <plugin>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-maven-plugin</artifactId>
-        </plugin>
-
-        <!-- PROTO -->
-        <plugin>
-            <groupId>org.xolstice.maven.plugins</groupId>
-            <artifactId>protobuf-maven-plugin</artifactId>
-            <version>0.6.1</version>
-            <configuration>
-                <protocArtifact>com.google.protobuf:protoc:3.25.5:exe:${os.detected.classifier}</protocArtifact>
-                <pluginId>grpc-java</pluginId>
-                <pluginArtifact>io.grpc:protoc-gen-grpc-java:1.68.1:exe:${os.detected.classifier}</pluginArtifact>
-            </configuration>
-            <executions>
-                <execution>
-                    <goals>
-                        <goal>compile</goal>
-                        <goal>compile-custom</goal>
-                    </goals>
-                </execution>
-            </executions>
-        </plugin>
-    </plugins>
-</build>
-
-```
-
-## Kafka Container
-
-Copy/paste this line into the environment variables when running the container in intellij
-```
-KAFKA_CFG_ADVERTISED_LISTENERS=PLAINTEXT://kafka:9092,EXTERNAL://localhost:9094;KAFKA_CFG_CONTROLLER_LISTENER_NAMES=CONTROLLER;KAFKA_CFG_CONTROLLER_QUORUM_VOTERS=0@kafka:9093;KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP=CONTROLLER:PLAINTEXT,EXTERNAL:PLAINTEXT,PLAINTEXT:PLAINTEXT;KAFKA_CFG_LISTENERS=PLAINTEXT://:9092,CONTROLLER://:9093,EXTERNAL://:9094;KAFKA_CFG_NODE_ID=0;KAFKA_CFG_PROCESS_ROLES=controller,broker
-```
-
-## Kafka Producer Setup (Patient Service)
-
-Add the following to `application.properties`
-```
-spring.kafka.consumer.key-deserializer=org.apache.kafka.common.serialization.StringDeserializer
-spring.kafka.consumer.value-deserializer=org.apache.kafka.common.serialization.ByteArrayDeserializer
-```
-
-
-# Notification Service
 
 ---
 
-## Environment Vars
+## API Endpoints & Testing
 
-```
-SPRING_KAFKA_BOOTSTRAP_SERVERS=kafka:9092
-```
+### Authentication
+* `POST /auth/register` — Register a new healthcare worker / patient
+* `POST /auth/login` — Authenticate and receive a signed JWT bearer token
 
-## Protobuf/Kafka 
+### Patients (Routed via Gateway)
+* `GET /patients` — Retrieve patient profiles (Protected with JWT)
+* `POST /patients` — Register a new patient and trigger billing initialization via gRPC & Kafka event
+* `GET /patients/{id}` — Fetch detailed clinical history
 
-Dependencies (add in addition to whats there)
-
-```
-<dependency>
-    <groupId>org.springframework.kafka</groupId>
-    <artifactId>spring-kafka</artifactId>
-    <version>3.3.0</version>
-</dependency>
-
-<dependency>
-    <groupId>com.google.protobuf</groupId>
-    <artifactId>protobuf-java</artifactId>
-    <version>4.29.1</version>
-</dependency>
+### Automated Integration Tests
+Run the comprehensive REST Assured test suite:
+```bash
+mvn -pl integration-tests test
 ```
 
-Update the build section in pom.xml with the following
+---
 
-```
-    <build>
-        <extensions>
-            <!-- Ensure OS compatibility for protoc -->
-            <extension>
-                <groupId>kr.motd.maven</groupId>
-                <artifactId>os-maven-plugin</artifactId>
-                <version>1.7.0</version>
-            </extension>
-        </extensions>
-        <plugins>
-            <plugin>
-                <groupId>org.springframework.boot</groupId>
-                <artifactId>spring-boot-maven-plugin</artifactId>
-            </plugin>
+## License & Acknowledgments
 
-            <plugin>
-                <groupId>org.xolstice.maven.plugins</groupId>
-                <artifactId>protobuf-maven-plugin</artifactId>
-                <version>0.6.1</version>
-                <configuration>
-                    <protocArtifact>com.google.protobuf:protoc:3.25.5:exe:${os.detected.classifier}</protocArtifact>
-                    <pluginId>grpc-java</pluginId>
-                    <pluginArtifact>io.grpc:protoc-gen-grpc-java:1.68.1:exe:${os.detected.classifier}</pluginArtifact>
-                </configuration>
-                <executions>
-                    <execution>
-                        <goals>
-                            <goal>compile</goal>
-                            <goal>compile-custom</goal>
-                        </goals>
-                    </execution>
-                </executions>
-            </plugin>
-        </plugins>
-    </build>
-```
-
-
-# Auth service
-
-Dependencies (add in addition to whats there)
-
-```
-        <dependency>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-security</artifactId>
-        </dependency>
-
-        <dependency>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-data-jpa</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-web</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-test</artifactId>
-            <scope>test</scope>
-        </dependency>
-        <dependency>
-            <groupId>org.springframework.security</groupId>
-            <artifactId>spring-security-test</artifactId>
-            <scope>test</scope>
-        </dependency>
-        <dependency>
-            <groupId>io.jsonwebtoken</groupId>
-            <artifactId>jjwt-api</artifactId>
-            <version>0.12.6</version>
-        </dependency>
-        <dependency>
-            <groupId>io.jsonwebtoken</groupId>
-            <artifactId>jjwt-impl</artifactId>
-            <version>0.12.6</version>
-            <scope>runtime</scope>
-        </dependency>
-        <dependency>
-            <groupId>io.jsonwebtoken</groupId>
-            <artifactId>jjwt-jackson</artifactId>
-            <version>0.12.6</version>
-            <scope>runtime</scope>
-        </dependency>
-        <dependency>
-            <groupId>org.postgresql</groupId>
-            <artifactId>postgresql</artifactId>
-            <scope>runtime</scope>
-        </dependency>
-        <dependency>
-            <groupId>org.springdoc</groupId>
-            <artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>
-            <version>2.6.0</version>
-        </dependency>
-        <dependency>
-          <groupId>com.h2database</groupId>
-          <artifactId>h2</artifactId>
-        </dependency>
-       
-```
-
-## Environment Variables
-
-```
-SPRING_DATASOURCE_PASSWORD=password
-SPRING_DATASOURCE_URL=jdbc:postgresql://auth-service-db:5432/db
-SPRING_DATASOURCE_USERNAME=admin_user
-SPRING_JPA_HIBERNATE_DDL_AUTO=update
-SPRING_SQL_INIT_MODE=always
-```
-
-
-## Data.sql
-
-```sql
--- Ensure the 'users' table exists
-CREATE TABLE IF NOT EXISTS "users" (
-    id UUID PRIMARY KEY,
-    email VARCHAR(255) UNIQUE NOT NULL,
-    password VARCHAR(255) NOT NULL,
-    role VARCHAR(50) NOT NULL
-);
-
--- Insert the user if no existing user with the same id or email exists
-INSERT INTO "users" (id, email, password, role)
-SELECT '223e4567-e89b-12d3-a456-426614174006', 'testuser@test.com',
-       '$2b$12$7hoRZfJrRKD2nIm2vHLs7OBETy.LWenXXMLKf99W8M4PUwO6KB7fu', 'ADMIN'
-WHERE NOT EXISTS (
-    SELECT 1
-    FROM "users"
-    WHERE id = '223e4567-e89b-12d3-a456-426614174006'
-       OR email = 'testuser@test.com'
-);
-
-
-
-```
-
-
-# Auth Service DB
-
-## Environment Variables
-
-```
-POSTGRES_DB=db;POSTGRES_PASSWORD=password;POSTGRES_USER=admin_user
-```
+- **Reference Architecture**: Architecture and implementation based on the microservices reference design by Chris Blakely (Code Jackal).
+- **License**: Released under the MIT License.
