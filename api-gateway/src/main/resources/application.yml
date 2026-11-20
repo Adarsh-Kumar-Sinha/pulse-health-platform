@@ -35,3 +35,8 @@ spring:
             - Path=/api-docs/auth
           filters:
             - RewritePath=/api-docs/auth,/v3/api-docs
+
+        - id: notification-service-route
+          uri: http://notification-service:4006
+          predicates:
+            - Path=/notifications/**
